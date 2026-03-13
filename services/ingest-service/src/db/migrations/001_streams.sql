@@ -1,0 +1,18 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+CREATE TABLE IF NOT EXISTS streams (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	user_id UUID NOT NULL,
+	title TEXT NOT NULL,
+	is_live BOOLEAN NOT NULL DEFAULT FALSE,
+	stream_key_hash TEXT NOT NULL,
+	started_at TIMESTAMPTZ,
+	ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS stream_sessions (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	stream_id UUID NOT NULL REFERENCES streams(id) ON DELETE CASCADE,
+	started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	ended_at TIMESTAMPTZ
+);
