@@ -1,0 +1,42 @@
+{
+  "name": "auth-service",
+  "version": "1.0.0",
+  "description": "Authentication service for the livestream platform.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/app.ts",
+    "test": "vitest run",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:status": "tsx scripts/migrate.ts --status"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nitish151/Livestream-Platform-Backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Nitish151/Livestream-Platform-Backend/issues"
+  },
+  "homepage": "https://github.com/Nitish151/Livestream-Platform-Backend#readme",
+  "dependencies": {
+    "@fastify/jwt": "^10.0.0",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "fastify": "^5.8.2",
+    "fastify-plugin": "^5.1.0",
+    "pg": "^8.20.0",
+    "redis": "^5.11.0",
+    "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^25.5.0",
+    "@types/pg": "^8.18.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
