@@ -2,7 +2,7 @@ import { Kafka, Producer, Partitioners } from 'kafkajs';
 import logger from '../utils/logger.js';
 
 export interface StreamStartedEvent {
-  type: 'STREAM_STARTED';
+  eventType: 'STREAM_STARTED';
   streamId: string;
   userId: string;
   title: string;
@@ -10,16 +10,20 @@ export interface StreamStartedEvent {
 }
 
 export interface StreamEndedEvent {
-  type: 'STREAM_ENDED';
+  eventType: 'STREAM_ENDED';
   streamId: string;
   endedAt: string;
 }
 
 export interface TranscodingJob {
+  eventType: 'TRANSCODING_JOB_REQUESTED';
   streamId: string;
   userId: string;
+  timestamp: string;
+  traceId: string;
+  jobId: string;
   rtmpUrl: string;
-  startedAt: string;
+  requestedAt: string;
 }
 
 const STREAM_LIFECYCLE_TOPIC = 'stream-lifecycle';
@@ -108,5 +112,9 @@ export async function publishTranscodingJob(job: TranscodingJob): Promise<void> 
     messages: [{ key: job.streamId, value: JSON.stringify(job) }],
     acks: -1, // all
   });
-  logger.info('Kafka: published TranscodingJob', { streamId: job.streamId, rtmpUrl: job.rtmpUrl });
+  logger.info('Kafka: published TranscodingJob', {
+    streamId: job.streamId,
+    jobId: job.jobId,
+    rtmpUrl: job.rtmpUrl,
+  });
 }

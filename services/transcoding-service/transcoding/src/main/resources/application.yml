@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: transcoding
+
+kafka:
+  bootstrap-servers: localhost:9092
+
+minio:
+  endpoint: http://localhost:9100
+  access-key: minio
+  secret-key: minio123
+
+transcoding:
+  concurrency: 4

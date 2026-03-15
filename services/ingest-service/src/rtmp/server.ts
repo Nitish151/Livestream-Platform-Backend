@@ -101,19 +101,23 @@ export function createRtmpServer(): NodeMediaServer {
       const rtmpUrl = `rtmp://localhost:${rtmpPort}/live/${rawKey}`;
 
       await publishStreamStarted({
-        type: 'STREAM_STARTED',
+        eventType: 'STREAM_STARTED',
         streamId: stream.id,
         userId: stream.user_id,
         title: stream.title,
         startedAt,
       });
 
-      await publishTranscodingJob({
-        streamId: stream.id,
-        userId: stream.user_id,
-        rtmpUrl,
-        startedAt,
-      });
+        await publishTranscodingJob({
+          eventType: 'TRANSCODING_JOB_REQUESTED',
+          streamId: stream.id,
+          userId: stream.user_id,
+          timestamp: startedAt,
+          traceId: crypto.randomUUID(),
+          jobId: crypto.randomUUID(),
+          rtmpUrl,
+          requestedAt: startedAt,
+        });
 
       logger.info('prePublish: stream accepted', { streamId: stream.id, userId: stream.user_id });
     } catch (err) {
@@ -159,7 +163,7 @@ export function createRtmpServer(): NodeMediaServer {
       );
 
       await publishStreamEnded({
-        type: 'STREAM_ENDED',
+        eventType: 'STREAM_ENDED',
         streamId: stream.id,
         endedAt,
       });
