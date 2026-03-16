@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LSPB Stream Player</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #05080f;
+      --surface:   #0b1120;
+      --card:      #0f1929;
+      --card2:     #141f30;
+      --border:    rgba(255,255,255,0.07);
+      --border2:   rgba(255,255,255,0.12);
+      --text:      #e8edf5;
+      --muted:     #5a6a82;
+      --dim:       #2a3a52;
+      --live:      #00e57a;
+      --live-dim:  rgba(0,229,122,0.12);
+      --live-glow: rgba(0,229,122,0.35);
+      --red:       #ff4757;
+      --red-dim:   rgba(255,71,87,0.12);
+      --blue:      #4a9fff;
+      --blue-dim:  rgba(74,159,255,0.1);
+      --gold:      #f5c842;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Atmospheric background ─── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 15% -10%, rgba(0,229,122,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 85% 110%, rgba(74,159,255,0.05) 0%, transparent 55%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 1020px;
+      margin: 0 auto;
+      padding: 36px 24px 60px;
+    }
+
+    /* ─── Header ─── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+      animation: fadeDown 0.5s ease both;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--live), #00b85c);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 0 20px var(--live-glow);
+    }
+
+    .logo-icon svg {
+      width: 18px;
+      height: 18px;
+      fill: #021a0c;
+    }
+
+    .logo-text {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .logo-text span {
+      color: var(--live);
+    }
+
+    .badge {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      background: var(--card);
+    }
+
+    /* ─── URL Bar ─── */
+    .url-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      animation: fadeDown 0.5s 0.1s ease both;
+    }
+
+    .url-wrap {
+      flex: 1;
+      position: relative;
+    }
+
+    .url-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 13px 14px 13px 42px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    input[type="text"]:focus {
+      border-color: rgba(74,159,255,0.5);
+      box-shadow: 0 0 0 3px rgba(74,159,255,0.08);
+    }
+
+    .load-btn {
+      padding: 13px 24px;
+      background: linear-gradient(135deg, var(--live), #00c96c);
+      color: #031a0c;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      white-space: nowrap;
+      box-shadow: 0 4px 20px var(--live-glow);
+      letter-spacing: 0.01em;
+    }
+
+    .load-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 28px var(--live-glow);
+    }
+
+    .load-btn:active { transform: translateY(0); }
+
+    /* ─── Status bar ─── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      animation: fadeDown 0.5s 0.15s ease both;
+    }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .live-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: var(--live-dim);
+      border: 1px solid rgba(0,229,122,0.2);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--live);
+      letter-spacing: 0.08em;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .live-pill.visible { opacity: 1; }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--live);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 var(--live-glow); }
+      50%       { opacity: 0.8; transform: scale(0.9); box-shadow: 0 0 0 5px transparent; }
+    }
+
+    .status-msg {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      transition: color 0.3s;
+    }
+
+    .status-msg.error { color: var(--red); }
+    .status-msg.ok    { color: var(--live); }
+
+    .viewer-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .viewer-chip svg { color: var(--blue); }
+
+    #viewerCount {
+      font-family: 'DM Mono', monospace;
+      font-weight: 500;
+      color: var(--text);
+      min-width: 1ch;
+      transition: color 0.3s;
+    }
+
+    /* ─── Video ─── */
+    .video-shell {
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #000;
+      aspect-ratio: 16 / 9;
+      animation: fadeDown 0.5s 0.2s ease both;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+    }
+
+    /* Idle overlay */
+    .idle-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: radial-gradient(ellipse at center, #0d1a2e 0%, #05080f 100%);
+      transition: opacity 0.4s;
+      pointer-events: none;
+    }
+
+    .idle-overlay.hidden { opacity: 0; }
+
+    .idle-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 2px solid var(--dim);
+      display: grid;
+      place-items: center;
+      color: var(--dim);
+    }
+
+    .idle-text {
+      color: var(--muted);
+      font-size: 0.9rem;
+      letter-spacing: 0.04em;
+    }
+
+    /* Scan-line effect on video */
+    .video-shell::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ─── Stats row ─── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+      animation: fadeDown 0.5s 0.25s ease both;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover { border-color: var(--border2); }
+
+    .stat-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+
+    .stat-value.live-val { color: var(--live); }
+    .stat-value.blue-val { color: var(--blue); }
+
+    /* ─── Tip ─── */
+    .tip {
+      margin-top: 20px;
+      padding: 14px 18px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--blue);
+      border-radius: 0 10px 10px 0;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.6;
+      animation: fadeDown 0.5s 0.3s ease both;
+    }
+
+    .tip strong { color: var(--blue); }
+
+    /* ─── Animations ─── */
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 600px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div class="logo-text">LSP<span>B</span> Player</div>
+      </div>
+      <div class="badge">HLS · ADAPTIVE BITRATE</div>
+    </header>
+
+    <!-- URL bar -->
+    <div class="url-bar">
+      <div class="url-wrap">
+        <span class="url-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+        </span>
+        <input id="manifestUrl" type="text"
+          placeholder="http://localhost:3003/v1/streams/{streamId}/master.m3u8" />
+      </div>
+      <button class="load-btn" id="loadBtn">Load Stream</button>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-left">
+        <div class="live-pill" id="livePill">
+          <div class="live-dot"></div>
+          LIVE
+        </div>
+        <div class="status-msg" id="status">Waiting for stream URL</div>
+      </div>
+      <div class="viewer-chip">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span id="viewerCount">—</span>
+        <span style="color:var(--dim)">live</span>
+      </div>
+    </div>
+
+    <!-- Video -->
+    <div class="video-shell">
+      <video id="video" controls autoplay playsinline></video>
+      <div class="idle-overlay" id="idleOverlay">
+        <div class="idle-icon">
+          <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+        </div>
+        <div class="idle-text">Enter a manifest URL above to begin</div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Stream Status</div>
+        <div class="stat-value" id="statStatus">Idle</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Quality Level</div>
+        <div class="stat-value blue-val" id="statQuality">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Live Viewers</div>
+        <div class="stat-value live-val" id="statViewers">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Views</div>
+        <div class="stat-value" style="color:var(--gold)" id="statTotalViews">—</div>
+      </div>
+    </div>
+
+    <!-- Tip -->
+    <div class="tip">
+      <strong>Quick load:</strong>
+      append <code>?streamId=your-uuid</code> or
+      <code>?manifestUrl=http://localhost:3003/v1/streams/.../master.m3u8</code>
+      to this page's URL to auto-load a stream.
+    </div>
+
+  </div>
+
+  <script>
+    const STREAM_API_BASE = 'http://localhost:3003';
+
+    const videoEl       = document.getElementById('video');
+    const manifestInput = document.getElementById('manifestUrl');
+    const loadBtn       = document.getElementById('loadBtn');
+    const viewerCountEl = document.getElementById('viewerCount');
+    const statusEl      = document.getElementById('status');
+    const livePill      = document.getElementById('livePill');
+    const idleOverlay   = document.getElementById('idleOverlay');
+    const statStatus     = document.getElementById('statStatus');
+    const statQuality    = document.getElementById('statQuality');
+    const statViewers    = document.getElementById('statViewers');
+    const statTotalViews = document.getElementById('statTotalViews');
+
+    let hls        = null;
+    let pollTimer  = null;
+    let upTimer    = null;
+    let startTime  = null;
+
+    /* ── Viewer session identity (persists per browser via localStorage) ── */
+    const userId = (() => {
+      let id = localStorage.getItem('lspb_viewer_id');
+      if (!id) { id = crypto.randomUUID(); localStorage.setItem('lspb_viewer_id', id); }
+      return id;
+    })();
+
+    let sessionId      = null;
+    let viewerStreamId = null;
+    let joinedAt       = null;
+    let pingInterval   = null;
+
+    /* ── Status helper ── */
+    function setStatus(msg, type = '') {
+      statusEl.textContent = msg;
+      statusEl.className   = 'status-msg' + (type ? ' ' + type : '');
+    }
+
+    /* ── Extract stream ID from manifest URL ── */
+    function extractStreamId(url) {
+      try {
+        const m = new URL(url).pathname.match(/\/v1\/streams\/([^/]+)\/master\.m3u8$/i);
+        return m ? m[1] : null;
+      } catch { return null; }
+    }
+
+    function normalizeManifestUrl(raw) {
+      const value = (raw || '').trim();
+      if (!value) return '';
+
+      // If two full URLs were accidentally concatenated, keep the first valid manifest URL.
+      const match = value.match(/https?:\/\/[^\s]*\/v1\/streams\/[^/]+\/master\.m3u8/i);
+      if (match && match[0]) return match[0];
+
+      // Support typing only the API path.
+      if (value.startsWith('/v1/streams/')) return `${STREAM_API_BASE}${value}`;
+
+      return value;
+    }
+
+    /* ── Viewer count polling ── */
+    async function refreshViewerCount(streamId) {
+      try {
+        const res  = await fetch(`${STREAM_API_BASE}/v1/streams/${streamId}/viewercount`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const live = Number.isFinite(data.liveViewerCount) ? data.liveViewerCount : 0;
+        const total = Number.isFinite(data.viewerCount) ? data.viewerCount : 0;
+        viewerCountEl.textContent  = live.toLocaleString();
+        statViewers.textContent    = live.toLocaleString();
+        statTotalViews.textContent = total.toLocaleString();
+      } catch {
+        viewerCountEl.textContent  = '—';
+        statViewers.textContent    = '—';
+        statTotalViews.textContent = '—';
+      }
+    }
+
+    function startPolling(streamId) {
+      stopPolling();
+      refreshViewerCount(streamId);
+      pollTimer = setInterval(() => refreshViewerCount(streamId), 10_000);
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    /* ── Viewer lifecycle ── */
+    async function joinViewer(streamId) {
+      sessionId      = crypto.randomUUID();
+      viewerStreamId = streamId;
+      joinedAt       = Date.now();
+      try {
+        await fetch(`${STREAM_API_BASE}/v1/streams/${streamId}/viewers/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, userId, rendition: '720p' }),
+        });
+      } catch { /* best-effort */ }
+      pingInterval = setInterval(() => pingViewer(), 30_000);
+    }
+
+    async function pingViewer() {
+      if (!sessionId || !viewerStreamId) return;
+      try {
+        const res = await fetch(`${STREAM_API_BASE}/v1/streams/${viewerStreamId}/viewers/ping`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, userId }),
+        });
+        if (res.status === 404) await joinViewer(viewerStreamId); // session expired, rejoin
+      } catch { /* best-effort */ }
+    }
+
+    async function leaveViewer() {
+      if (!sessionId || !viewerStreamId) return;
+      const watchDurationSeconds = joinedAt ? Math.floor((Date.now() - joinedAt) / 1000) : 0;
+      const [sid, vsid] = [sessionId, viewerStreamId];
+      sessionId = null; viewerStreamId = null; joinedAt = null;
+      clearInterval(pingInterval); pingInterval = null;
+      try {
+        await fetch(`${STREAM_API_BASE}/v1/streams/${vsid}/viewers/leave`, {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sid, userId, watchDurationSeconds }),
+        });
+      } catch { /* best-effort */ }
+    }
+
+    /* ── Detect quality level from HLS.js ── */
+    function trackQuality() {
+      if (!hls) return;
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+        const level = hls.levels[data.level];
+        if (level) {
+          const h = level.height || '?';
+          statQuality.textContent = `${h}p`;
+        }
+      });
+    }
+
+    /* ── Stop / destroy player ── */
+    function stopPlayer() {
+      leaveViewer();
+      if (hls) { hls.destroy(); hls = null; }
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      stopPolling();
+      livePill.classList.remove('visible');
+      idleOverlay.classList.remove('hidden');
+      statStatus.textContent     = 'Idle';
+      statStatus.style.color     = '';
+      statQuality.textContent    = '—';
+      statViewers.textContent    = '—';
+      statTotalViews.textContent = '—';
+      viewerCountEl.textContent  = '—';
+    }
+
+    /* ── Load stream ── */
+    function loadStream() {
+      const url = normalizeManifestUrl(manifestInput.value);
+      manifestInput.value = url;
+      if (!url) { setStatus('Enter a manifest URL first.', 'error'); return; }
+
+      const streamId = extractStreamId(url);
+      if (!streamId) {
+        setStatus('URL must match /v1/streams/{id}/master.m3u8', 'error');
+        return;
+      }
+
+      stopPlayer();
+      setStatus('Connecting…');
+      statStatus.textContent = 'Connecting…';
+      statStatus.style.color = 'var(--muted)';
+
+      if (window.Hls && Hls.isSupported()) {
+        hls = new Hls({ enableWorker: true });
+        hls.loadSource(url);
+        hls.attachMedia(videoEl);
+        trackQuality();
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setStatus(`Stream loaded · ${streamId.slice(0,8)}…`, 'ok');
+          statStatus.textContent = 'Live';
+          statStatus.style.color = 'var(--live)';
+          livePill.classList.add('visible');
+          idleOverlay.classList.add('hidden');
+          videoEl.play().catch(() => {});
+          startPolling(streamId);
+          joinViewer(streamId);
+        });
+
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            setStatus(`Fatal HLS error: ${data.type}`, 'error');
+            statStatus.textContent = 'Error';
+            statStatus.style.color = 'var(--red)';
+            livePill.classList.remove('visible');
+          }
+        });
+
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        videoEl.src = url;
+        videoEl.addEventListener('loadedmetadata', () => {
+          setStatus(`Stream loaded · ${streamId.slice(0,8)}…`, 'ok');
+          statStatus.textContent = 'Live';
+          statStatus.style.color = 'var(--live)';
+          livePill.classList.add('visible');
+          idleOverlay.classList.add('hidden');
+          videoEl.play().catch(() => {});
+          startPolling(streamId);
+          joinViewer(streamId);
+        }, { once: true });
+
+      } else {
+        setStatus('HLS not supported in this browser.', 'error');
+        return;
+      }
+    }
+
+    /* ── Events ── */
+    loadBtn.addEventListener('click', loadStream);
+    manifestInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadStream(); });
+
+    /* ── URL param auto-load ── */
+    const params      = new URLSearchParams(location.search);
+    const pStreamId   = params.get('streamId');
+    const pManifestUrl= params.get('manifestUrl');
+
+    if (pManifestUrl) {
+      manifestInput.value = pManifestUrl;
+    } else if (pStreamId) {
+      manifestInput.value = `${STREAM_API_BASE}/v1/streams/${pStreamId}/master.m3u8`;
+    }
+
+    if (manifestInput.value) loadStream();
+
+    /* ── Leave on tab close / navigation ── */
+    window.addEventListener('pagehide', () => leaveViewer());
+  </script>
+</body>
+</html>
