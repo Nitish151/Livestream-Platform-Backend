@@ -18,13 +18,11 @@ services:
       - "6379:6379"
     command: redis-server --save "" --appendonly no
 
-  redis-ui:
-    image: rediscommander/redis-commander:latest
-    container_name: redis-ui
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: redis-insight
     ports:
-      - "8081:8081"
-    environment:
-      REDIS_HOSTS: local:redis:6379
+      - "5540:5540"
     depends_on:
       - redis
 
@@ -67,7 +65,7 @@ services:
     image: minio/minio
     container_name: minio
     ports:
-      - "9100:9000"   # host:container
+      - "9100:9000" # host:container
       - "9101:9001"
     command: server /data --console-address ":9001"
     environment:
@@ -82,15 +80,49 @@ services:
     ports:
       - "8123:8123"
       - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: devpass
     ulimits:
       nofile:
         soft: 262144
         hard: 262144
     volumes:
       - clickhousedata:/var/lib/clickhouse
+      - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/default-password.xml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/?query=SELECT%201"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
 
 volumes:
   pgdata:
   kafkadata:
   miniodata:
   clickhousedata:
+  grafana-data:

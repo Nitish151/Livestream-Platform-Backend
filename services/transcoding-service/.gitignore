@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+
+# Wrapper
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+out/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -28,7 +28,14 @@ vi.mock('bcrypt', () => ({
 
 // Import after mocks are set up
 import { query } from '../db/index.js';
-import { registerUser, loginUser, storeRefreshToken, getRefreshTokenUserId } from './auth.service.js';
+import {
+  registerUser,
+  loginUser,
+  storeRefreshToken,
+  getRefreshTokenUserId,
+  generateStreamKey,
+  resetStreamKey,
+} from './auth.service.js';
 
 const mockQuery = vi.mocked(query);
 
@@ -150,6 +157,48 @@ describe('loginUser', () => {
       .rejects.toHaveProperty('statusCode', 400);
     await expect(loginUser('test@example.com', ''))
       .rejects.toHaveProperty('statusCode', 400);
+  });
+});
+
+/* ────────────────────────────────────────────── */
+/*  stream key management                        */
+/* ────────────────────────────────────────────── */
+
+describe('generateStreamKey / resetStreamKey', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('should generate and store stream key for existing user', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123' }], rowCount: 1 });
+
+    const streamKey = await generateStreamKey('uuid-123');
+
+    expect(streamKey).toMatch(/^[0-9a-f]+$/);
+    expect(streamKey.length).toBe(48);
+    expect(mockQuery).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE users'),
+      expect.any(Array),
+    );
+    // we can't inspect hashed value exactly, but the plain text should not match hashed prefix
+    expect(streamKey).not.toContain('hashed:');
+  });
+
+  it('should throw 400 when userId is empty', async () => {
+    // @ts-expect-error test invalid input
+    await expect(generateStreamKey('')).rejects.toHaveProperty('statusCode', 400);
+  });
+
+  it('should throw 404 when user not found', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    await expect(generateStreamKey('missing-id')).rejects.toHaveProperty('statusCode', 404);
+  });
+
+  it('resetStreamKey should call generateStreamKey', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ id: 'uuid-123' }], rowCount: 1 });
+
+    const streamKey = await resetStreamKey('uuid-123');
+
+    expect(streamKey).toMatch(/^[0-9a-f]+$/);
   });
 });
 

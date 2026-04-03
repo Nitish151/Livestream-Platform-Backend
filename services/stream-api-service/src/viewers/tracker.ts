@@ -20,6 +20,8 @@ interface BaseTrackerInput {
   userId: string;
   traceId: string;
   ip: string;
+  countryCode?: string;
+  region?: string;
   userAgent: string;
   rendition?: string;
 }
@@ -53,6 +55,8 @@ async function publishEvent(eventType: ViewerEventType, input: BaseTrackerInput,
     traceId: input.traceId,
     sessionId: input.sessionId,
     ip: input.ip,
+    countryCode: input.countryCode,
+    region: input.region,
     userAgent: input.userAgent,
     rendition: input.rendition ?? DEFAULT_RENDITION,
     watchDurationSeconds,
@@ -64,7 +68,7 @@ export async function joinViewer(input: BaseTrackerInput): Promise<{ joinedAt: s
   const joinedAt = new Date().toISOString();
   const expiresAt = Math.floor(Date.now() / 1000) + VIEWER_SESSION_TTL_SECONDS;
 
-  await redis.pfadd(getViewerCountHllKey(input.streamId), input.userId);
+  await redis.pfadd(getViewerCountHllKey(input.streamId), input.sessionId);
   await redis.set(
     getViewerSessionKey(input.sessionId),
     JSON.stringify({ streamId: input.streamId, userId: input.userId, joinedAt } satisfies ViewerSession),

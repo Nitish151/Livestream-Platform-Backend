@@ -47,6 +47,8 @@ export interface ViewerEvent {
   traceId: string;
   sessionId: string;
   ip: string;
+  countryCode?: string;
+  region?: string;
   userAgent: string;
   rendition: Rendition;
   watchDurationSeconds: number;

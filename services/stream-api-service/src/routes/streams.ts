@@ -31,6 +31,24 @@ type StreamMetadata = {
   endedAt: string | null;
 };
 
+type ChatHistoryQuery = {
+  before?: string;
+  limit?: string;
+};
+
+type ChatHistoryAnchor = {
+  id: string;
+  createdAt: string;
+};
+
+type ChatHistoryMessage = {
+  messageId: string;
+  userId: string;
+  username: string;
+  content: string;
+  timestamp: string;
+};
+
 type PatchStreamBody = {
   title?: string;
   description?: string;
@@ -41,12 +59,16 @@ type ViewerJoinBody = {
   sessionId?: string;
   userId?: string;
   rendition?: string;
+  countryCode?: string;
+  region?: string;
 };
 
 type ViewerPingBody = {
   sessionId?: string;
   userId?: string;
   rendition?: string;
+  countryCode?: string;
+  region?: string;
 };
 
 type ViewerLeaveBody = {
@@ -54,6 +76,13 @@ type ViewerLeaveBody = {
   userId?: string;
   rendition?: string;
   watchDurationSeconds?: number;
+  countryCode?: string;
+  region?: string;
+};
+
+type ViewerGeoMetadata = {
+  countryCode?: string;
+  region?: string;
 };
 
 function getApiBaseUrl(request: FastifyRequest): string {
@@ -114,6 +143,50 @@ function getSegmentResponseHeaders(filename: string): { contentType: string; cac
   };
 }
 
+function getHeaderValue(request: FastifyRequest, headerName: string): string | undefined {
+  const value = request.headers[headerName];
+  const resolved = Array.isArray(value) ? value[0] : value;
+  if (typeof resolved !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = resolved.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeCountryCode(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.trim().toUpperCase();
+}
+
+function resolveViewerGeoMetadata(
+  request: FastifyRequest,
+  countryCodeFromBody?: string,
+  regionFromBody?: string,
+): ViewerGeoMetadata {
+  const headerCountryCode =
+    getHeaderValue(request, 'cf-ipcountry')
+    ?? getHeaderValue(request, 'x-vercel-ip-country')
+    ?? getHeaderValue(request, 'cloudfront-viewer-country')
+    ?? getHeaderValue(request, 'x-country-code');
+
+  const headerRegion =
+    getHeaderValue(request, 'x-vercel-ip-country-region')
+    ?? getHeaderValue(request, 'cloudfront-viewer-country-region')
+    ?? getHeaderValue(request, 'x-region');
+
+  const countryCode = normalizeCountryCode(countryCodeFromBody ?? headerCountryCode);
+  const region = (regionFromBody ?? headerRegion)?.trim();
+
+  return {
+    countryCode,
+    region: region && region.length > 0 ? region : undefined,
+  };
+}
+
 export default async function streamsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/streams', async (_request, reply) => {
     try {
@@ -132,7 +205,22 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
         ORDER BY started_at DESC NULLS LAST, id ASC
       `);
 
-      reply.send(result.rows);
+      const enrichedStreams = await Promise.all(
+        result.rows.map(async (stream) => {
+          try {
+            const counts = await getViewerCount(stream.id);
+            return {
+              ...stream,
+              viewerCount: counts.viewerCount,
+              liveViewerCount: counts.liveViewerCount
+            };
+          } catch (error) {
+            return { ...stream, viewerCount: 0, liveViewerCount: 0 };
+          }
+        })
+      );
+
+      reply.send(enrichedStreams);
     } catch (error) {
       logger.error('Failed to list active streams', normalizeError(error));
       reply.code(500).send({ message: 'failed to list streams' });
@@ -162,7 +250,21 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
           return;
         }
 
-        reply.send(result.rows[0]);
+        let viewerCount = 0;
+        let liveViewerCount = 0;
+        try {
+          const counts = await getViewerCount(result.rows[0].id);
+          viewerCount = counts.viewerCount;
+          liveViewerCount = counts.liveViewerCount;
+        } catch (e) {
+          // Keep 0 if failed
+        }
+
+        reply.send({
+          ...result.rows[0],
+          viewerCount,
+          liveViewerCount
+        });
       } catch (error) {
         logger.error('Failed to fetch stream metadata', {
           streamId: request.params.id,
@@ -173,11 +275,107 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
     }
   );
 
+  app.get<{ Params: StreamIdParams; Querystring: ChatHistoryQuery }>(
+    '/v1/streams/:id/chat/history',
+    async (request: FastifyRequest<{ Params: StreamIdParams; Querystring: ChatHistoryQuery }>, reply: FastifyReply) => {
+      const { id: streamId } = request.params;
+      const before = request.query.before?.trim();
+      const parsedLimit = Number.parseInt(request.query.limit ?? '50', 10);
+      const limit = Number.isNaN(parsedLimit) ? 50 : parsedLimit;
+
+      if (limit < 1 || limit > 50) {
+        reply.code(400).send({ message: 'limit must be between 1 and 50' });
+        return;
+      }
+
+      try {
+        let anchor: ChatHistoryAnchor | null = null;
+
+        if (before) {
+          const anchorResult = await query<ChatHistoryAnchor>(
+            `
+              SELECT id, created_at AS "createdAt"
+              FROM chat_messages
+              WHERE id = $1
+                AND stream_id = $2
+              LIMIT 1
+            `,
+            [before, streamId],
+          );
+
+          if (anchorResult.rowCount === 0) {
+            reply.code(400).send({ message: 'invalid before cursor' });
+            return;
+          }
+
+          anchor = anchorResult.rows[0];
+        }
+
+        const messagesResult = anchor
+          ? await query<ChatHistoryMessage>(
+            `
+              SELECT
+                id         AS "messageId",
+                user_id    AS "userId",
+                username,
+                content,
+                created_at AS "timestamp"
+              FROM chat_messages
+              WHERE stream_id = $1
+                AND deleted_at IS NULL
+                AND (created_at, id) < ($2::timestamptz, $3::uuid)
+              ORDER BY created_at DESC, id DESC
+              LIMIT $4
+            `,
+            [streamId, anchor.createdAt, anchor.id, limit],
+          )
+          : await query<ChatHistoryMessage>(
+            `
+              SELECT
+                id         AS "messageId",
+                user_id    AS "userId",
+                username,
+                content,
+                created_at AS "timestamp"
+              FROM chat_messages
+              WHERE stream_id = $1
+                AND deleted_at IS NULL
+              ORDER BY created_at DESC, id DESC
+              LIMIT $2
+            `,
+            [streamId, limit],
+          );
+
+        const nextBefore = messagesResult.rowCount === limit
+          ? messagesResult.rows[messagesResult.rows.length - 1]?.messageId ?? null
+          : null;
+
+        reply.send({
+          streamId,
+          messages: messagesResult.rows,
+          pagination: {
+            before: nextBefore,
+            limit,
+            hasMore: nextBefore !== null,
+          },
+        });
+      } catch (error) {
+        logger.error('Failed to fetch chat history', {
+          streamId,
+          before,
+          limit,
+          ...normalizeError(error),
+        });
+        reply.code(500).send({ message: 'failed to load chat history' });
+      }
+    }
+  );
+
   app.post<{ Params: StreamIdParams; Body: ViewerJoinBody }>(
     '/v1/streams/:id/viewers/join',
     async (request: FastifyRequest<{ Params: StreamIdParams; Body: ViewerJoinBody }>, reply: FastifyReply) => {
       const { id: streamId } = request.params;
-      const { sessionId, userId, rendition } = request.body ?? {};
+      const { sessionId, userId, rendition, countryCode, region } = request.body ?? {};
 
       if (!sessionId || !userId) {
         reply.code(400).send({ message: 'sessionId and userId are required' });
@@ -185,6 +383,7 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
       }
 
       try {
+        const geoMetadata = resolveViewerGeoMetadata(request, countryCode, region);
         const result = await joinViewer({
           streamId,
           sessionId,
@@ -192,6 +391,8 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
           rendition,
           traceId: request.id,
           ip: request.ip,
+          countryCode: geoMetadata.countryCode,
+          region: geoMetadata.region,
           userAgent: request.headers['user-agent'] ?? '',
         });
 
@@ -212,7 +413,7 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
     '/v1/streams/:id/viewers/ping',
     async (request: FastifyRequest<{ Params: StreamIdParams; Body: ViewerPingBody }>, reply: FastifyReply) => {
       const { id: streamId } = request.params;
-      const { sessionId, userId, rendition } = request.body ?? {};
+      const { sessionId, userId, rendition, countryCode, region } = request.body ?? {};
 
       if (!sessionId || !userId) {
         reply.code(400).send({ message: 'sessionId and userId are required' });
@@ -220,6 +421,7 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
       }
 
       try {
+        const geoMetadata = resolveViewerGeoMetadata(request, countryCode, region);
         await pingViewer({
           streamId,
           sessionId,
@@ -227,6 +429,8 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
           rendition,
           traceId: request.id,
           ip: request.ip,
+          countryCode: geoMetadata.countryCode,
+          region: geoMetadata.region,
           userAgent: request.headers['user-agent'] ?? '',
         });
 
@@ -252,7 +456,7 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
     '/v1/streams/:id/viewers/leave',
     async (request: FastifyRequest<{ Params: StreamIdParams; Body: ViewerLeaveBody }>, reply: FastifyReply) => {
       const { id: streamId } = request.params;
-      const { sessionId, userId, rendition, watchDurationSeconds } = request.body ?? {};
+      const { sessionId, userId, rendition, watchDurationSeconds, countryCode, region } = request.body ?? {};
 
       if (!sessionId || !userId) {
         reply.code(400).send({ message: 'sessionId and userId are required' });
@@ -260,6 +464,7 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
       }
 
       try {
+        const geoMetadata = resolveViewerGeoMetadata(request, countryCode, region);
         const result = await leaveViewer({
           streamId,
           sessionId,
@@ -268,6 +473,8 @@ export default async function streamsRoutes(app: FastifyInstance): Promise<void>
           watchDurationSeconds,
           traceId: request.id,
           ip: request.ip,
+          countryCode: geoMetadata.countryCode,
+          region: geoMetadata.region,
           userAgent: request.headers['user-agent'] ?? '',
         });
 

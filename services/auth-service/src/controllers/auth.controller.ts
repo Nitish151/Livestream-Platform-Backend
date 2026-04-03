@@ -1,6 +1,13 @@
 import crypto from 'node:crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { registerUser, loginUser, storeRefreshToken, getRefreshTokenUserId } from '../services/auth.service.js';
+import {
+  registerUser,
+  loginUser,
+  storeRefreshToken,
+  getRefreshTokenUserId,
+  generateStreamKey,
+  resetStreamKey,
+} from '../services/auth.service.js';
 import { query } from '../db/index.js';
 import { AppError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
@@ -130,6 +137,46 @@ export function handleValidate(app: FastifyInstance) {
       }
       // JWT verification errors (expired, invalid signature, etc.)
       return reply.status(401).send({ error: 'Invalid or expired token', code: 'INVALID_TOKEN' });
+    }
+  };
+}
+
+/**
+ * POST /stream-key
+ */
+export function handleGenerateStreamKey(app: FastifyInstance) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await request.jwtVerify();
+      const userId = (request.user as { sub?: string })?.sub;
+      if (!userId) {
+        throw new AppError('Invalid token payload', 401, 'INVALID_TOKEN');
+      }
+
+      const streamKey = await generateStreamKey(userId);
+      return reply.status(201).send({ streamKey });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  };
+}
+
+/**
+ * POST /stream-key/reset
+ */
+export function handleResetStreamKey(app: FastifyInstance) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await request.jwtVerify();
+      const userId = (request.user as { sub?: string })?.sub;
+      if (!userId) {
+        throw new AppError('Invalid token payload', 401, 'INVALID_TOKEN');
+      }
+
+      const streamKey = await resetStreamKey(userId);
+      return reply.status(201).send({ streamKey });
+    } catch (error) {
+      return sendError(reply, error);
     }
   };
 }

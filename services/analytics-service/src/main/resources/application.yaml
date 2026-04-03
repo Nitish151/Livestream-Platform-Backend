@@ -1,0 +1,19 @@
+server:
+  port: 3004
+
+spring:
+  application:
+    name: analytics-service
+
+  datasource:
+    url: jdbc:clickhouse://localhost:8123/default
+    username: default
+    password: devpass
+    driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+    hikari:
+      connection-timeout: 30000
+      validation-timeout: 5000
+      maximum-pool-size: 5
+
+kafka:
+  bootstrap-servers: localhost:9092

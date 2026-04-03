@@ -23,6 +23,9 @@ const requestLoggerPlugin: FastifyPluginCallback = (app: FastifyInstance, _opts,
   app.addHook('onResponse', async (request, reply) => {
     logResponse(request, reply.statusCode);
   });
+  app.addHook('onResponse', async (request: any, reply) => {
+    logResponse(request, reply.statusCode);
+  });
 
   /* ── log errors ── */
   app.addHook('onError', async (request, _reply, error) => {

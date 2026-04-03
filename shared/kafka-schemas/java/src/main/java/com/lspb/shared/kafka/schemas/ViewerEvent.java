@@ -11,6 +11,8 @@ public class ViewerEvent {
     private String traceId;
     private String sessionId;
     private String ip;
+    private String countryCode;
+    private String region;
     private String userAgent;
     private String rendition;
     private Integer watchDurationSeconds;

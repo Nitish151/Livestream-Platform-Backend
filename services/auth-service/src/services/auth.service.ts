@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcrypt';
 import { query } from '../db/index.js';
 import { getRedisClient } from '../redis/index.js';
@@ -117,6 +118,41 @@ export async function loginUser(
     email: user.email,
     role: user.role,
   };
+}
+
+/**
+ * Generate a new stream key for the user, store bcrypt hash, and return plaintext key.
+ * The value is returned once and not stored in plaintext.
+ */
+export async function generateStreamKey(userId: string): Promise<string> {
+  if (!userId) {
+    throw new AppError('User ID is required', 400, 'VALIDATION_ERROR');
+  }
+
+  const streamKey = crypto.randomBytes(24).toString('hex');
+  const streamKeyHash = await bcrypt.hash(streamKey, BCRYPT_ROUNDS);
+
+  const result = await query(
+    `UPDATE users
+     SET stream_key_hash = $1
+     WHERE id = $2
+     RETURNING id`,
+    [streamKeyHash, userId],
+  );
+
+  if (result.rowCount === 0) {
+    throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+  }
+
+  logger.info('Stream key generated', { userId });
+  return streamKey;
+}
+
+/**
+ * Reset stream key (same behavior as generateStreamKey for now).
+ */
+export async function resetStreamKey(userId: string): Promise<string> {
+  return generateStreamKey(userId);
 }
 
 /**

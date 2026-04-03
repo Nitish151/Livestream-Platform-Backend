@@ -11,13 +11,29 @@ export interface ViewerEventMessage {
   traceId: string;
   sessionId: string;
   ip: string;
+  countryCode?: string;
+  region?: string;
   userAgent: string;
   rendition: string;
   watchDurationSeconds: number;
 }
 
+export interface ChatEventMessage {
+  eventType: 'CHAT_SENT';
+  messageId: string;
+  streamId: string;
+  userId: string;
+  username: string;
+  message: string;
+  timestamp: string;
+}
+
 function getViewerEventsTopic(): string {
   return process.env.VIEWER_EVENTS_TOPIC ?? 'viewer-events';
+}
+
+function getChatEventsTopic(): string {
+  return process.env.CHAT_EVENTS_TOPIC ?? 'chat-events';
 }
 
 let producer: Producer | null = null;
@@ -25,6 +41,7 @@ let producer: Producer | null = null;
 export async function initializeProducer(): Promise<Producer> {
   if (producer) return producer;
   const viewerEventsTopic = getViewerEventsTopic();
+  const chatEventsTopic = getChatEventsTopic();
 
   const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:9092')
     .split(',')
@@ -41,17 +58,19 @@ export async function initializeProducer(): Promise<Producer> {
 
   try {
     const existingTopics = new Set(await admin.listTopics());
-    if (!existingTopics.has(viewerEventsTopic)) {
+    const topicsToCreate = [viewerEventsTopic, chatEventsTopic].filter((topic) => !existingTopics.has(topic));
+
+    if (topicsToCreate.length > 0) {
       await admin.createTopics({
-        topics: [{
-          topic: viewerEventsTopic,
+        topics: topicsToCreate.map((topic) => ({
+          topic,
           numPartitions: 1,
           replicationFactor: 1,
-        }],
+        })),
         waitForLeaders: true,
       });
 
-      logger.info('Kafka topic created', { topic: viewerEventsTopic });
+      logger.info('Kafka topics created', { topics: topicsToCreate });
     }
   } finally {
     await admin.disconnect();
@@ -92,6 +111,16 @@ export async function publishViewerEvent(event: ViewerEventMessage): Promise<voi
 
   await getProducer().send({
     topic: viewerEventsTopic,
+    messages: [{ key: event.streamId, value: JSON.stringify(event) }],
+    acks: -1,
+  });
+}
+
+export async function publishChatEvent(event: ChatEventMessage): Promise<void> {
+  const chatEventsTopic = getChatEventsTopic();
+
+  await getProducer().send({
+    topic: chatEventsTopic,
     messages: [{ key: event.streamId, value: JSON.stringify(event) }],
     acks: -1,
   });

@@ -1,0 +1,45 @@
+
+> Task :compileJava FAILED
+E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:11: error: package org.springframework.jdbc.core does not exist
+import org.springframework.jdbc.core.JdbcTemplate;
+                                    ^
+E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:27: error: cannot find symbol
+    private final JdbcTemplate jdbcTemplate;
+                  ^
+  symbol:   class JdbcTemplate
+  location: class ClickHouseBatchWriter
+E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:24: error: cannot find symbol
+@RequiredArgsConstructor
+^
+  symbol:   class JdbcTemplate
+  location: class ClickHouseBatchWriter
+3 errors
+
+[Incubating] Problems report is available at: file:///E:/Twitch/Livestream-Platform-Backend/services/analytics-service/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava'.
+> Compilation failed; see the compiler output below.
+  E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:27: error: cannot find symbol
+      private final JdbcTemplate jdbcTemplate;
+                    ^
+    symbol:   class JdbcTemplate
+    location: class ClickHouseBatchWriter
+  E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:24: error: cannot find symbol
+  @RequiredArgsConstructor
+  ^
+    symbol:   class JdbcTemplate
+    location: class ClickHouseBatchWriter
+  E:\Twitch\Livestream-Platform-Backend\services\analytics-service\src\main\java\com\lspb\analytics_service\service\ClickHouseBatchWriter.java:11: error: package org.springframework.jdbc.core does not exist
+  import org.springframework.jdbc.core.JdbcTemplate;
+                                      ^
+  3 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 2s
+1 actionable task: 1 executed

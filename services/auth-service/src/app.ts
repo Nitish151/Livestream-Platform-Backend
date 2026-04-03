@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
@@ -27,6 +28,30 @@ async function bootstrap() {
   /* ── create Fastify instance ── */
   const app = Fastify({ logger: false });
 
+  /* ── CORS ── */
+  const defaultCorsOrigins = [
+    'http://localhost:5000',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'http://localhost:5173',
+  ];
+
+  const allowedOrigins = (process.env.STREAM_API_CORS_ORIGINS ?? defaultCorsOrigins.join(','))
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  await app.register(cors, {
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('CORS origin not allowed'), false);
+    },
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+  });
   /* ── register plugins ── */
   await app.register(requestLogger);
 
