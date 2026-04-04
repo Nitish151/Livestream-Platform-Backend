@@ -2,6 +2,8 @@ package com.lspb.transcoding.ffmpeg;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -28,8 +30,10 @@ public class SegmentUploader {
 
     private final SegmentStorageService storageService;
     private final StreamLifecyclePublisher lifecyclePublisher;
+    private final MeterRegistry meterRegistry;
 
     private final Map<String, WatchRuntime> streamWatchers = new ConcurrentHashMap<>();
+    private final Map<String, DistributionSummary> uploadDurationByRendition = new ConcurrentHashMap<>();
 
     public void watchStream(String streamId) {
         Path outputBase = Paths.get("/tmp", streamId);
@@ -126,7 +130,10 @@ public class SegmentUploader {
         try {
             waitForFileReady(segmentPath);
 
+            long uploadStartNanos = System.nanoTime();
             storageService.uploadTs(segmentPath, runtime.streamId, rendition, fileName);
+            double uploadDurationMs = (System.nanoTime() - uploadStartNanos) / 1_000_000.0;
+            getUploadDurationSummary(rendition).record(uploadDurationMs);
 
             Path renditionManifest = runtime.outputBase.resolve(rendition).resolve("index.m3u8");
             uploadManifestWithRetries(runtime, rendition, renditionManifest);
@@ -144,6 +151,15 @@ public class SegmentUploader {
         } catch (Exception ex) {
             log.error("Segment upload failed for streamId={} path={}", runtime.streamId, segmentPath, ex);
         }
+    }
+
+    private DistributionSummary getUploadDurationSummary(String rendition) {
+        return uploadDurationByRendition.computeIfAbsent(rendition, key -> DistributionSummary.builder("hls_segment_upload_duration_ms")
+            .description("Duration in milliseconds to upload HLS segment files")
+            .baseUnit("milliseconds")
+            .serviceLevelObjectives(100, 250, 500, 1000, 1500, 2000, 3000, 5000)
+            .tag("rendition", key)
+            .register(meterRegistry));
     }
 
     private void uploadManifestWithRetries(WatchRuntime runtime, String rendition, Path filePath) throws Exception {

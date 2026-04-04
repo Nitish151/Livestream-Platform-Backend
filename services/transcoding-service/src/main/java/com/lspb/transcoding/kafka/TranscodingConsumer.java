@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lspb.transcoding.ffmpeg.FfmpegRunner;
 import com.lspb.transcoding.ffmpeg.SegmentUploader;
 import com.lspb.transcoding.model.TranscodingJob;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +49,13 @@ public class TranscodingConsumer {
 
     private final Map<String, ActiveJob> activeJobs = new ConcurrentHashMap<>();
     private final AtomicBoolean jobsListenerPaused = new AtomicBoolean(false);
+
+    @PostConstruct
+    public void initMetrics() {
+        Gauge.builder("transcoding_jobs_active", activeJobs::size)
+            .description("Current number of active transcoding jobs")
+            .register(meterRegistry);
+    }
 
     @RetryableTopic(attempts = "3", backOff = @BackOff(delay = 1000, multiplier = 2.0))
     @KafkaListener(id = TRANSCODING_JOBS_LISTENER_ID, topics = "transcoding-jobs", groupId = "transcoding-service")
@@ -221,6 +230,7 @@ public class TranscodingConsumer {
         @Header(value = KafkaHeaders.RECEIVED_TOPIC, required = false) String topic
     ) {
         meterRegistry.counter("transcoding.jobs.dlt.total").increment();
+        meterRegistry.counter("transcoding_dlq_total", "topic", topic != null ? topic : "unknown").increment();
         System.err.println(
             "[DLT] Received failed transcoding job payload on topic=" + topic + ", key=" + messageKey
                 + ", payload=" + payload
