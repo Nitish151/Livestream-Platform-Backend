@@ -1,0 +1,2 @@
+-- Users table is managed by auth-service, ingest-service just queries it.
+-- See ../../auth-service/src/db/migrations/001_users.sql

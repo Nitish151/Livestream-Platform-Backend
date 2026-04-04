@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginCallback } from 'fastify';
 import fp from 'fastify-plugin';
 import logger from '../utils/logger.js';
+import { httpRequestDurationMs } from '../metrics/registry.js';
 
 /**
  * Fastify plugin that logs every HTTP request/response,
@@ -63,6 +64,12 @@ function logResponse(request: any, statusCode: number) {
   const startTime: bigint = request.startTime ?? process.hrtime.bigint();
   const durationMs = Number(process.hrtime.bigint() - startTime) / 1_000_000;
   const level = statusCode >= 400 ? 'warn' : 'info';
+  const route = request.routeOptions?.url ?? request.url.split('?')[0] ?? 'unknown';
+
+  httpRequestDurationMs.observe(
+    { route, status: String(statusCode) },
+    durationMs,
+  );
 
   logger[level](`← ${request.method} ${request.url} ${statusCode} ${durationMs.toFixed(1)}ms`, {
     reqId: request.id,

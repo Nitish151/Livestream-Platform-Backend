@@ -7,6 +7,7 @@ import { getRedisSubClient } from '../redis/pubsub.js';
 import { getRedisPublisherClient } from '../redis/publisher.js';
 import { query } from '../db/client.js';
 import { publishChatEvent } from '../kafka/producer.js';
+import { chatMessagesPerSecond, websocketConnectionsActive } from '../metrics/registry.js';
 
 type StreamIdParams = {
   streamId: string;
@@ -57,6 +58,15 @@ type UserRow = {
 const streamConnections = new Map<string, Set<WebSocket.WebSocket>>();
 const streamSocketUsers = new Map<string, Map<WebSocket.WebSocket, string>>();
 let redisSubListenerInitialized = false;
+
+function updateWebsocketConnectionsMetric(): void {
+  let totalConnections = 0;
+  for (const connections of streamConnections.values()) {
+    totalConnections += connections.size;
+  }
+
+  websocketConnectionsActive.set(totalConnections);
+}
 
 function getStreamConnections(streamId: string) {
   if (!streamConnections.has(streamId)) {
@@ -332,6 +342,7 @@ export default async function chatWebSocketRoutes(app: FastifyInstance): Promise
         const shouldSubscribe = connections.size === 0;
         connections.add(socket);
         socketUsers.set(socket, userId);
+        updateWebsocketConnectionsMetric();
 
         if (shouldSubscribe) {
           const redisSub = getRedisSubClient();
@@ -367,6 +378,7 @@ export default async function chatWebSocketRoutes(app: FastifyInstance): Promise
           clearTimers();
           connections.delete(socket);
           socketUsers.delete(socket);
+          updateWebsocketConnectionsMetric();
 
           if (connections.size === 0) {
             streamConnections.delete(streamId);
@@ -573,6 +585,8 @@ export default async function chatWebSocketRoutes(app: FastifyInstance): Promise
                 content,
                 timestamp,
               };
+
+              chatMessagesPerSecond.inc({ streamId });
 
               await redisPublisher.publish(channel, JSON.stringify(outboundMessage));
 

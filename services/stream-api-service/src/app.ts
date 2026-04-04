@@ -12,6 +12,8 @@ import { initializeRedisPublisherClient, closeRedisPublisherClient } from './red
 import { initializeProducer, closeProducer } from './kafka/producer.js';
 import requestLogger from './plugins/requestLogger.js';
 import streamsRoutes from './routes/streams.js';
+import healthRoutes from './routes/health.js';
+import metricsRoutes from './routes/metrics.js';
 import chatWebSocketRoutes from './websocket/chatHandler.js';
 
 import logger from './utils/logger.js';
@@ -69,6 +71,8 @@ async function bootstrap() {
   await initializeProducer();
 
   await app.register(streamsRoutes);
+  await app.register(healthRoutes);
+  await app.register(metricsRoutes);
   await app.register(chatWebSocketRoutes);
 
   const port = parseInt(process.env.HTTP_PORT ?? '3003', 10);

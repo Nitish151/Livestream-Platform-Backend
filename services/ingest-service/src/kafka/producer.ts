@@ -35,6 +35,17 @@ let producer: Producer | null = null;
 export async function initializeProducer(): Promise<Producer> {
   if (producer) return producer;
 
+  // Test mode: skip Kafka connections and provide a noop producer when SKIP_KAFKA=true
+  if ((process.env.SKIP_KAFKA ?? '').toLowerCase() === 'true' || (process.env.KAFKA_BROKERS ?? '') === '') {
+    producer = {
+      send: async (_opts: any) => { return Promise.resolve(); },
+      connect: async () => Promise.resolve(),
+      disconnect: async () => Promise.resolve(),
+    } as unknown as Producer;
+    logger.info('Skipping Kafka initialization (SKIP_KAFKA). Using noop producer');
+    return producer;
+  }
+
   const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:9092')
     .split(',')
     .map((broker) => broker.trim())

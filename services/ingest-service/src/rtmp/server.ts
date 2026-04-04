@@ -9,6 +9,7 @@ import {
   publishTranscodingJob,
 } from '../kafka/producer.js';
 import logger from '../utils/logger.js';
+import { rtmpConnectionsActive } from '../metrics/registry.js';
 
 interface UserRecord {
   id: string;
@@ -95,6 +96,7 @@ export function createRtmpServer(): NodeMediaServer {
   };
 
   const nms = new NodeMediaServer(config);
+  const activeRtmpPublishers = new Set<string>();
 
   // ─── prePublish ───────────────────────────────────────────────────────────
   // Fires when OBS / any RTMP client connects and wants to start publishing.
@@ -200,6 +202,9 @@ export function createRtmpServer(): NodeMediaServer {
         requestedAt: startedAt,
       });
 
+      activeRtmpPublishers.add(stream.id);
+      rtmpConnectionsActive.set(activeRtmpPublishers.size);
+
       logger.info('prePublish: stream accepted', {
         streamId: stream.id,
         userId: stream.user_id,
@@ -273,6 +278,9 @@ export function createRtmpServer(): NodeMediaServer {
         streamId: stream.id,
         endedAt,
       });
+
+      activeRtmpPublishers.delete(stream.id);
+      rtmpConnectionsActive.set(activeRtmpPublishers.size);
 
       logger.info('donePublish: stream ended', { streamId: stream.id });
     } catch (err) {

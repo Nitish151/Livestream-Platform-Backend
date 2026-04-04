@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import logger from '../utils/logger.js';
+import { httpRequestDurationMs } from '../metrics/registry.js';
 
 type TimedRequest = FastifyRequest & {
   startTime?: bigint;
@@ -9,6 +10,12 @@ function logResponse(request: TimedRequest, statusCode: number): void {
   const startTime = request.startTime ?? process.hrtime.bigint();
   const durationMs = Number(process.hrtime.bigint() - startTime) / 1_000_000;
   const level = statusCode >= 400 ? 'warn' : 'info';
+  const route = request.routeOptions?.url ?? request.url.split('?')[0] ?? 'unknown';
+
+  httpRequestDurationMs.observe(
+    { route, status: String(statusCode) },
+    durationMs,
+  );
 
   logger[level](`← ${request.method} ${request.url} ${statusCode} ${durationMs.toFixed(1)}ms`, {
     reqId: request.id,
